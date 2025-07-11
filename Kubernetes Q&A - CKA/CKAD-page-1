@@ -1,0 +1,803 @@
+# Kubernetes Q&A - CKA/CKAD Preparation
+
+## 1. Scale Deployment with Replica 3
+
+**Q: Create a deployment with 3 replicas and scale it.**
+
+**A:**
+```bash
+# Create deployment
+kubectl create deployment nginx-deployment --image=nginx --replicas=3
+
+# Or scale existing deployment
+kubectl scale deployment nginx-deployment --replicas=3
+
+# Verify
+kubectl get deployment nginx-deployment
+kubectl get pods -l app=nginx-deployment
+```
+
+**YAML approach:**
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:latest
+```
+
+---
+
+## 2. Multi-Container Pod (3 containers: memcached, redis, busybox)
+
+**Q: Create a pod with 3 containers - memcached, redis, and busybox.**
+
+**A:**
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multi-container-pod
+spec:
+  containers:
+  - name: memcached
+    image: memcached:latest
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  - name: redis
+    image: redis:latest
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  - name: busybox
+    image: busybox:latest
+    command: ['sh', '-c', 'sleep 3600']
+    resources:
+      requests:
+        memory: "32Mi"
+        cpu: "25m"
+      limits:
+        memory: "64Mi"
+        cpu: "50m"
+```
+
+```bash
+# Apply the pod
+kubectl apply -f multi-container-pod.yaml
+
+# Verify
+kubectl get pods multi-container-pod
+kubectl describe pod multi-container-pod
+```
+
+---
+
+## 3. Find Pod with Highest Memory Usage
+
+**Q: Write the name of the pod that consumes the most memory to a file.**
+
+**A:**
+```bash
+# Get top pods by memory usage
+kubectl top pods --all-namespaces --sort-by=memory
+
+# Get the pod with highest memory usage and save to file
+kubectl top pods --all-namespaces --sort-by=memory --no-headers | head -1 | awk '{print $2}' > highest-memory-pod.txt
+
+# Alternative: More detailed approach
+kubectl top pods --all-namespaces --sort-by=memory | grep -v NAME | head -1 | awk '{print $2}' > pod-highest-memory.txt
+
+# Verify the file
+cat highest-memory-pod.txt
+```
+
+---
+
+## 4. Cluster Upgradation
+
+**Q: Upgrade a Kubernetes cluster (master and worker nodes).**
+
+**A:**
+
+### Master Node Upgrade:
+```bash
+# Check current version
+kubectl version --short
+
+# Drain the master node
+kubectl drain master-node --ignore-daemonsets --delete-emptydir-data
+
+# Update kubeadm
+sudo apt-mark unhold kubeadm && \
+sudo apt-get update && sudo apt-get install -y kubeadm=1.28.0-00 && \
+sudo apt-mark hold kubeadm
+
+# Verify kubeadm version
+kubeadm version
+
+# Plan the upgrade
+sudo kubeadm upgrade plan
+
+# Apply the upgrade
+sudo kubeadm upgrade apply v1.28.0
+
+# Upgrade kubelet and kubectl
+sudo apt-mark unhold kubelet kubectl && \
+sudo apt-get update && sudo apt-get install -y kubelet=1.28.0-00 kubectl=1.28.0-00 && \
+sudo apt-mark hold kubelet kubectl
+
+# Restart kubelet
+sudo systemctl daemon-reload
+sudo systemctl restart kubelet
+
+# Uncordon the master node
+kubectl uncordon master-node
+```
+
+### Worker Node Upgrade:
+```bash
+# On master: drain the worker node
+kubectl drain worker-node --ignore-daemonsets --delete-emptydir-data
+
+# On worker node: upgrade kubeadm
+sudo apt-mark unhold kubeadm && \
+sudo apt-get update && sudo apt-get install -y kubeadm=1.28.0-00 && \
+sudo apt-mark hold kubeadm
+
+# Upgrade the node
+sudo kubeadm upgrade node
+
+# Upgrade kubelet and kubectl
+sudo apt-mark unhold kubelet kubectl && \
+sudo apt-get update && sudo apt-get install -y kubelet=1.28.0-00 kubectl=1.28.0-00 && \
+sudo apt-mark hold kubelet kubectl
+
+# Restart kubelet
+sudo systemctl daemon-reload
+sudo systemctl restart kubelet
+
+# On master: uncordon the worker node
+kubectl uncordon worker-node
+```
+
+---
+
+## 5. ETCD Backup and Restore
+
+**Q: Create an ETCD backup and restore it.**
+
+**A:**
+
+### ETCD Backup:
+```bash
+# Find etcd endpoint and certificates
+kubectl get pods -n kube-system | grep etcd
+
+# Create backup
+ETCDCTL_API=3 etcdctl snapshot save /tmp/etcd-backup.db \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key
+
+# Verify backup
+ETCDCTL_API=3 etcdctl snapshot status /tmp/etcd-backup.db
+```
+
+### ETCD Restore:
+```bash
+# Stop kubelet and etcd
+sudo systemctl stop kubelet
+sudo systemctl stop etcd
+
+# Restore from backup
+ETCDCTL_API=3 etcdctl snapshot restore /tmp/etcd-backup.db \
+  --data-dir=/var/lib/etcd-restore \
+  --name=master \
+  --initial-cluster=master=https://127.0.0.1:2380 \
+  --initial-advertise-peer-urls=https://127.0.0.1:2380
+
+# Update etcd configuration to use new data directory
+sudo vim /etc/kubernetes/manifests/etcd.yaml
+# Change: --data-dir=/var/lib/etcd-restore
+
+# Start services
+sudo systemctl start kubelet
+```
+
+---
+
+## 6. Troubleshoot Node Not Ready
+
+**Q: Troubleshoot a node that is in NotReady state.**
+
+**A:**
+```bash
+# Check node status
+kubectl get nodes
+
+# Describe the problematic node
+kubectl describe node worker-node
+
+# SSH to the node
+ssh user@worker-node
+
+# Check kubelet status
+systemctl status kubelet
+
+# Check kubelet logs
+journalctl -u kubelet -f
+
+# Common fixes:
+# 1. Restart kubelet
+sudo systemctl restart kubelet
+
+# 2. Reload daemon and enable kubelet
+sudo systemctl daemon-reload
+sudo systemctl enable kubelet
+sudo systemctl start kubelet
+
+# 3. Check if kubelet is running
+sudo systemctl status kubelet
+
+# 4. Check kubelet configuration
+sudo cat /etc/kubernetes/kubelet.conf
+
+# 5. Check if certificates are valid
+sudo ls -la /etc/kubernetes/pki/
+
+# 6. Check disk space
+df -h
+
+# 7. Check if container runtime is running
+sudo systemctl status docker
+# or
+sudo systemctl status containerd
+```
+
+---
+
+## 7. PVC Create, Attach, and Increase Size
+
+**Q: Create a PVC, attach it to a pod, and increase its size.**
+
+**A:**
+
+### Create PVC:
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+```
+
+### Pod with PVC:
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-pvc
+spec:
+  containers:
+  - name: app
+    image: nginx
+    volumeMounts:
+    - mountPath: "/data"
+      name: my-storage
+  volumes:
+  - name: my-storage
+    persistentVolumeClaim:
+      claimName: my-pvc
+```
+
+### Increase PVC Size:
+```bash
+# Apply the resources
+kubectl apply -f pvc.yaml
+kubectl apply -f pod.yaml
+
+# Check current size
+kubectl get pvc my-pvc
+
+# Edit PVC to increase size
+kubectl edit pvc my-pvc
+# Change storage: 1Gi to storage: 2Gi
+
+# Or patch the PVC
+kubectl patch pvc my-pvc -p '{"spec":{"resources":{"requests":{"storage":"2Gi"}}}}'
+
+# Record the change
+kubectl annotate pvc my-pvc volume.alpha.kubernetes.io/resize-done=true --record
+
+# Verify the change
+kubectl get pvc my-pvc
+```
+
+---
+
+## 8. Grep Specific Error from Pod Logs
+
+**Q: Search for specific errors in pod logs (multi-container pods).**
+
+**A:**
+```bash
+# For single container pod
+kubectl logs pod-name | grep "ERROR"
+
+# For multi-container pod (specify container)
+kubectl logs pod-name -c container-name | grep "ERROR"
+
+# Example with multi-container pod
+kubectl logs multi-container-pod -c redis | grep "connection"
+kubectl logs multi-container-pod -c memcached | grep "failed"
+
+# Get logs with timestamps
+kubectl logs pod-name -c container-name --timestamps | grep "ERROR"
+
+# Follow logs in real-time
+kubectl logs pod-name -c container-name -f | grep "ERROR"
+
+# Save filtered logs to file
+kubectl logs pod-name -c container-name | grep "ERROR" > error-logs.txt
+
+# Get previous container logs
+kubectl logs pod-name -c container-name --previous | grep "ERROR"
+```
+
+---
+
+## 9. Ingress Rule for Service
+
+**Q: Create an Ingress rule for a service.**
+
+**A:**
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: myapp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: my-service
+            port:
+              number: 80
+  - host: api.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: api-service
+            port:
+              number: 8080
+```
+
+```bash
+# Apply the ingress
+kubectl apply -f ingress.yaml
+
+# Check ingress
+kubectl get ingress
+kubectl describe ingress my-ingress
+```
+
+---
+
+## 10. Network Policy to Allow Traffic
+
+**Q: Create a network policy to allow traffic from a pod to a particular namespace.**
+
+**A:**
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traffic-to-namespace
+  namespace: target-namespace
+spec:
+  podSelector: {}  # Apply to all pods in target-namespace
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: source-namespace
+    - podSelector:
+        matchLabels:
+          app: allowed-app
+    ports:
+    - protocol: TCP
+      port: 80
+```
+
+### Example: Allow frontend pods to access backend namespace:
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-to-backend
+  namespace: backend
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: frontend
+    - podSelector:
+        matchLabels:
+          app: frontend-app
+    ports:
+    - protocol: TCP
+      port: 8080
+```
+
+---
+
+## 11. Service for Deployment with Named Port
+
+**Q: Create a service for a deployment on a specific port with port name (http).**
+
+**A:**
+
+### Deployment with named port:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      containers:
+      - name: web
+        image: nginx
+        ports:
+        - containerPort: 80
+          name: http
+```
+
+### Service with named port:
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-service
+spec:
+  selector:
+    app: web-app
+  ports:
+  - port: 80
+    targetPort: http  # Reference the named port
+    name: http
+    protocol: TCP
+  type: ClusterIP
+```
+
+```bash
+# Apply both
+kubectl apply -f deployment.yaml
+kubectl apply -f service.yaml
+
+# Verify
+kubectl get svc web-service
+kubectl describe svc web-service
+```
+
+---
+
+## 12. List Persistent Volumes by Capacity
+
+**Q: List persistent volumes sorted by capacity.**
+
+**A:**
+```bash
+# List all PVs
+kubectl get pv
+
+# List PVs with capacity
+kubectl get pv --sort-by=.spec.capacity.storage
+
+# Custom columns showing name and capacity
+kubectl get pv -o custom-columns=NAME:.metadata.name,CAPACITY:.spec.capacity.storage
+
+# Sort by capacity (descending)
+kubectl get pv --sort-by=.spec.capacity.storage -o wide
+
+# Using JSONPath to get specific fields
+kubectl get pv -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.capacity.storage}{"\n"}{end}' | sort -k2 -h
+```
+
+---
+
+## 13. JSONPath Examples
+
+**Q: Use JSONPath to extract specific information from Kubernetes resources.**
+
+**A:**
+```bash
+# Get pod names
+kubectl get pods -o jsonpath='{.items[*].metadata.name}'
+
+# Get pod names and status
+kubectl get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\n"}{end}'
+
+# Get node names and their capacity
+kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.capacity.cpu}{"\n"}{end}'
+
+# Get services with their cluster IP
+kubectl get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.clusterIP}{"\n"}{end}'
+
+# Get persistent volumes with capacity
+kubectl get pv -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.capacity.storage}{"\n"}{end}'
+
+# Get pods with container images
+kubectl get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[*].image}{"\n"}{end}'
+
+# Get ready nodes
+kubectl get nodes -o jsonpath='{.items[?(@.status.conditions[-1].type=="Ready")].metadata.name}'
+```
+
+---
+
+## 14. Static Pod on Worker Node
+
+**Q: Create a static pod on a worker node.**
+
+**A:**
+```bash
+# SSH to worker node
+ssh user@worker-node
+
+# Find kubelet config to locate static pod path
+sudo cat /var/lib/kubelet/config.yaml | grep staticPodPath
+# Usually: /etc/kubernetes/manifests
+
+# Create static pod manifest
+sudo vim /etc/kubernetes/manifests/static-web.yaml
+```
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: static-web
+  labels:
+    app: static-web
+spec:
+  containers:
+  - name: web
+    image: nginx
+    ports:
+    - containerPort: 80
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+```
+
+```bash
+# The kubelet will automatically create the pod
+# Verify from master node
+kubectl get pods -o wide | grep static-web
+
+# Static pod will have node name suffix
+# e.g., static-web-worker-node
+```
+
+---
+
+## 15. Cluster Role and Role Binding with Service Account
+
+**Q: Create a cluster role, role binding, and service account.**
+
+**A:**
+
+### Service Account:
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: my-service-account
+  namespace: default
+```
+
+### Cluster Role:
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pod-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list"]
+```
+
+### Cluster Role Binding:
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pod-reader-binding
+subjects:
+- kind: ServiceAccount
+  name: my-service-account
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: pod-reader
+  apiGroup: rbac.authorization.k8s.io
+```
+
+```bash
+# Apply all resources
+kubectl apply -f service-account.yaml
+kubectl apply -f cluster-role.yaml
+kubectl apply -f cluster-role-binding.yaml
+
+# Verify
+kubectl get sa my-service-account
+kubectl get clusterrole pod-reader
+kubectl get clusterrolebinding pod-reader-binding
+```
+
+---
+
+## 16. Additional Important Commands
+
+### Copy Running Nodes to File:
+```bash
+# Get ready nodes
+kubectl get nodes --field-selector=status.conditions[?(@.type=="Ready")].status="True" -o jsonpath='{.items[*].metadata.name}' > running-nodes.txt
+
+# Alternative
+kubectl get nodes | grep " Ready" | awk '{print $1}' > running-nodes.txt
+```
+
+### Copy Pod Logs to File:
+```bash
+# Single container
+kubectl logs pod-name > pod-logs.txt
+
+# Multi-container
+kubectl logs pod-name -c container-name > container-logs.txt
+
+# With timestamps
+kubectl logs pod-name --timestamps > pod-logs-with-time.txt
+```
+
+### Sidecar Container Example:
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sidecar-pod
+spec:
+  containers:
+  - name: main-app
+    image: nginx
+    volumeMounts:
+    - name: shared-logs
+      mountPath: /var/log/nginx
+  - name: sidecar
+    image: busybox
+    command: ['sh', '-c', 'tail -f /var/log/nginx/access.log']
+    volumeMounts:
+    - name: shared-logs
+      mountPath: /var/log/nginx
+  volumes:
+  - name: shared-logs
+    emptyDir: {}
+```
+
+### Top Commands:
+```bash
+# Top nodes
+kubectl top nodes
+
+# Top pods
+kubectl top pods
+
+# Top pods in specific namespace
+kubectl top pods -n kube-system
+
+# Top pods sorted by CPU
+kubectl top pods --sort-by=cpu
+
+# Top pods sorted by memory
+kubectl top pods --sort-by=memory
+
+# Save top output to file
+kubectl top pods --sort-by=memory > top-pods-memory.txt
+```
+
+---
+
+## Quick Reference Commands
+
+```bash
+# Scale deployment
+kubectl scale deployment nginx --replicas=5
+
+# Update deployment image
+kubectl set image deployment/nginx nginx=nginx:1.21
+
+# Rollout status
+kubectl rollout status deployment/nginx
+
+# Rollout history
+kubectl rollout history deployment/nginx
+
+# Rollback
+kubectl rollout undo deployment/nginx
+
+# Create secret
+kubectl create secret generic my-secret --from-literal=key1=value1
+
+# Create configmap
+kubectl create configmap my-config --from-literal=key1=value1
+
+# Port forward
+kubectl port-forward pod/nginx 8080:80
+
+# Execute command in pod
+kubectl exec -it pod-name -- /bin/bash
+
+# Copy files
+kubectl cp pod-name:/path/to/file /local/path
+```
