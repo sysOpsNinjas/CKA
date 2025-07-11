@@ -292,8 +292,6 @@ graph TD
 - kubectl configured
 - Basic understanding of containers
 
-```
-
 ---
 
 ## 🌟 Features
