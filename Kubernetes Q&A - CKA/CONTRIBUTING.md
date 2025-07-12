@@ -272,8 +272,6 @@ kind: Pod
 2. [Mistake 2]
 3. [Mistake 3]
 
-## 💭 Advice for Future Candidates
-[Your detailed advice]
 
 ## 📊 Study Plan Recommendation
 ### Week 1-2: [Topics to focus on]
