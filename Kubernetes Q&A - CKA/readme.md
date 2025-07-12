@@ -375,9 +375,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **⭐ Star this repository if it helped you!**
 
-![GitHub stars](https://img.shields.io/github/stars/yourusername/k8s-study-guide?style=social)
-![GitHub forks](https://img.shields.io/github/forks/yourusername/k8s-study-guide?style=social)
-![GitHub issues](https://img.shields.io/github/issues/yourusername/k8s-study-guide)
+![GitHub stars](https://img.shields.io/github/stars/sysOpsNinjas/CKA?style=social)
+![GitHub forks](https://img.shields.io/github/forks/sysOpsNinjas/CKA?style=social)
+![GitHub issues](https://img.shields.io/github/issues/sysOpsNinjas/CKA)
 
 ---
 
