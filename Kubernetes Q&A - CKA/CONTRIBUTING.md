@@ -173,8 +173,6 @@ Special badges for:
 ✅ Be kind, inclusive, and constructive.
 ❌ No harassment, NDA violations, or spam.
 
-Report concerns: `conduct@k8s-study-guide.com`
-
 ---
 
 <div align="center">
